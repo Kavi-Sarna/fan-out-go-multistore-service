@@ -1,0 +1,47 @@
+# golangci-lint v2. `default: standard` is errcheck, govet, ineffassign,
+# staticcheck and unused; the list below is what gets added on top, and each
+# one is here because of a specific way this service could go wrong.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose      # a response body never closed is a leaked connection
+    - contextcheck   # a context.Background() where a request context belongs
+    - errorlint      # == on errors instead of errors.Is, which breaks on wrap
+    - gosec          # the obvious footguns, including missing server timeouts
+    - noctx          # HTTP calls with no context cannot be canceled
+    - nilerr         # returning nil after checking an error is never intended
+    - rowserrcheck   # sql.Rows.Err() unchecked hides a partial result set
+    - sqlclosecheck  # rows and statements that are never closed
+    - revive         # the style rules golint used to carry
+    - misspell
+    - unconvert
+    - wastedassign
+
+  settings:
+    govet:
+      enable:
+        - shadow     # a shadowed err is how a failure gets silently dropped
+    revive:
+      rules:
+        - name: exported
+          arguments: [checkPrivateReceivers]
+
+  exclusions:
+    rules:
+      # Tests may ignore errors on teardown and skip the doc-comment rule.
+      # gosec stays on: the Testcontainers fixtures in PR 9 and PR 12 put
+      # real connection strings in _test.go, which is exactly what G101 is
+      # for, and a blanket exclusion here would have to be remembered later.
+      - path: _test\.go$
+        linters: [errcheck, revive]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/kavi-sarna/fan-out-go-multistore-service
