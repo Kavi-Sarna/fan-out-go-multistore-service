@@ -12,12 +12,14 @@ name: Vulnerability scan
 on:
   schedule:
     - cron: "23 5 * * *"
-  # Changing dependencies can introduce a vulnerability, and that pull request
-  # is the right place to be told. It is a change the author made.
+  # Changing dependencies or the image can introduce a vulnerability, and
+  # that pull request is the right place to be told. It is a change the
+  # author made.
   pull_request:
     paths:
       - "go.mod"
       - "go.sum"
+      - "infra/docker/**"
       - "ci/scan.sh"
       - "ci/tools.env"
   workflow_dispatch:
@@ -30,9 +32,11 @@ permissions:
   contents: read
 
 jobs:
-  govulncheck:
+  scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Trivy is built from source the first time, which is the slow part. The
+    # cache below makes every later run reuse the binary.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
@@ -42,5 +46,12 @@ jobs:
           # exactly the one go.mod names - not whatever the runner has.
           go-version-file: go.mod
           cache: true
+
+      # The pinned tools, built once. Keyed on the pins and on go.mod, since a
+      # binary is built by a particular Go; a change to either rebuilds.
+      - uses: actions/cache@v6
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('ci/tools.env', 'go.mod') }}
 
       - run: ./ci/scan.sh

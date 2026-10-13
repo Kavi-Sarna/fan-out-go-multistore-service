@@ -15,6 +15,9 @@ on:
       - "Makefile"
       - "go.mod"
       - "go.sum"
+      # make ci builds and runs the image, inside docker-in-docker, so the
+      # image's inputs are the container's inputs too.
+      - "infra/docker/**"
   # No schedule. Everything the container is built from is pinned - the image
   # by digest, the feature by lockfile, Docker and Compose by version - so a
   # scheduled rebuild would build the same thing every week. Updates arrive as

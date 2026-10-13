@@ -1,0 +1,31 @@
+# Named for the Dockerfile beside it: the builder reads <Dockerfile>.dockerignore
+# from the Dockerfile's directory, ahead of a .dockerignore at the context
+# root. Paths below are relative to the context, the repository root.
+#
+# The build context is sent to the daemon before any instruction runs, so
+# everything listed here is time saved and, for a few entries, a secret not
+# copied into a layer by `COPY . .`.
+
+# Version control and editor state
+.git
+.github
+.devcontainer
+.idea
+.vscode
+
+# Local credentials. Nothing here needs them, and a layer is no place for them.
+.env*
+*.pem
+*.key
+
+# Build output and local tooling. .tools alone is over a hundred megabytes.
+bin
+.tools
+coverage.out
+
+# Documentation is not part of the binary
+docs
+*.md
+
+# Container and infrastructure definitions do not belong in the container
+infra

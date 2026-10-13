@@ -52,15 +52,19 @@
     "storage": "32gb"
   },
 
-  // Every port a service listens on, forwarded and labelled. Each later PR
+  // Every port a service listens on, forwarded and labeled. Each later PR
   // that adds a service adds its port here, and a test fails if one is
-  // missing or unlabelled.
-  "forwardPorts": [8080],
+  // missing or unlabeled.
+  "forwardPorts": [8080, 8081],
 
   "portsAttributes": {
     "8080": {
-      "label": "API",
+      "label": "API (native)",
       "onAutoForward": "notify"
+    },
+    "8081": {
+      "label": "API (container)",
+      "onAutoForward": "silent"
     }
   },
 

@@ -17,7 +17,7 @@ import (
 // A devcontainer added once and never revisited drifts until the thing it
 // exists to show is unreachable from it: a service listening on a port the
 // container never forwards. The rule that prevents that - every service is
-// forwarded and labelled - is only kept if something fails when it is not.
+// forwarded and labeled - is only kept if something fails when it is not.
 
 const devcontainerDir = "../../.devcontainer"
 
@@ -103,7 +103,7 @@ func TestTheServicePortIsForwarded(t *testing.T) {
 	t.Errorf("port %s is what the service listens on but is not in forwardPorts", want)
 }
 
-// An unlabelled port shows up in the Ports panel as a bare number, and
+// An unlabeled port shows up in the Ports panel as a bare number, and
 // nobody demonstrating this to someone else knows which one to open.
 func TestEveryForwardedPortIsLabelled(t *testing.T) {
 	t.Parallel()

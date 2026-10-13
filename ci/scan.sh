@@ -35,6 +35,52 @@ fi
 go version
 "${GOVULNCHECK}" -version | head -3
 
+echo
+echo "==> govulncheck: the code, its dependencies, the standard library"
 # Exits non-zero when a vulnerability is reachable, which is what fails the
 # scheduled run and turns it into a notification.
 "${GOVULNCHECK}" ./...
+
+# The image, which govulncheck cannot see. A base image carries packages the
+# Go code never calls - a libc, certificates, timezone data - and those have
+# vulnerabilities of their own. The runtime here is distroless, so this should
+# say nothing; it is here to keep saying nothing as the base image ages.
+TRIVY="${TOOLS}/trivy-${TRIVY_VER}"
+if [[ ! -x "${TRIVY}" ]]; then
+  echo "installing trivy ${TRIVY_VER}"
+  temp="$(mktemp -d)"
+  GOBIN="${temp}" go install "github.com/aquasecurity/trivy/cmd/trivy@${TRIVY_VER}"
+  mv "${temp}/trivy" "${TRIVY}"
+  rm -rf "${temp}"
+fi
+
+# Trivy reads only public artifacts here - its database, the base images -
+# but it consults the Docker credential configuration first, and a credential
+# helper left behind by an uninstalled Docker Desktop makes it fail before it
+# starts. An empty configuration sidesteps that without touching the real one.
+# It does not affect access to the local daemon, which is a socket, not a
+# credential.
+trivy_config="$(mktemp -d)"
+trap 'rm -rf "${trivy_config}"' EXIT
+
+echo
+echo "==> trivy config: the Dockerfile"
+DOCKER_CONFIG="${trivy_config}" "${TRIVY}" config --quiet --exit-code 1 \
+  --severity HIGH,CRITICAL .
+
+if docker info >/dev/null 2>&1; then
+  echo
+  echo "==> trivy image: what ships"
+  docker build --quiet --file infra/docker/Dockerfile --tag fan-out-api:scan . >/dev/null
+  # --ignore-unfixed: a vulnerability with no fixed version is one nobody can
+  # act on from this repository, and reporting it every night trains people to
+  # ignore the job.
+  DOCKER_CONFIG="${trivy_config}" "${TRIVY}" image --quiet --exit-code 1 \
+    --severity HIGH,CRITICAL --ignore-unfixed fan-out-api:scan
+elif [[ "${CI:-}" == "true" ]]; then
+  echo "no Docker daemon in CI; the image scan cannot be skipped here" >&2
+  exit 1
+else
+  echo
+  echo "skipped the image scan: no Docker daemon. The scheduled job runs it." >&2
+fi
