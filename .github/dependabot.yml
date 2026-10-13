@@ -1,0 +1,33 @@
+# Updates arrive as pull requests, and the pull requests run CI. That is the
+# alternative to a scheduled rebuild that hopes nothing moved: everything is
+# pinned, and moving a pin is a change somebody reviews.
+version: 2
+
+updates:
+  # The devcontainer's features. Dependabot keeps devcontainer.json on the
+  # major version and rewrites devcontainer-lock.json with the exact one.
+  #
+  # What this does not cover: the image digest in devcontainer.json, the
+  # Docker engine version in the feature's options, and the Compose version
+  # in on-create.sh. Those are bumped by hand, which is a reason to look at
+  # them when the vulnerability scan or a Dependabot PR is open anyway.
+  - package-ecosystem: devcontainers
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    # One pull request for a batch of action bumps, rather than one each.
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # No dependencies yet. Present so the first one is watched from the day it
+  # arrives rather than from the day somebody remembers.
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly

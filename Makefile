@@ -20,7 +20,7 @@ include ci/tools.env
 GOLANGCI  := $(TOOLS)/golangci-lint-$(GOLANGCI_VER)
 GOIMPORTS := $(TOOLS)/goimports-$(GOIMPORTS_VER)
 
-.PHONY: help fmt vet lint test race cover build run tidy tools ci clean clean-tools
+.PHONY: help fmt vet lint test race cover build run tidy tools ci scan clean clean-tools
 
 help: ## Show this help
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -41,6 +41,8 @@ $(GOIMPORTS):
 	  mv $$tmp/goimports $@ && rm -rf $$tmp
 
 tools: $(GOLANGCI) $(GOIMPORTS) ## Install the pinned tools into .tools
+	@ln -sf $(notdir $(GOLANGCI)) $(TOOLS)/golangci-lint
+	@ln -sf $(notdir $(GOIMPORTS)) $(TOOLS)/goimports
 
 fmt: $(GOIMPORTS) ## Format the code
 	$(GOIMPORTS) -w -local $(MODULE) .
@@ -61,6 +63,9 @@ race: ## Run the tests under the race detector
 ci: ## Run everything CI runs, in the same order, by the same script
 	./ci/run.sh
 
+scan: ## Check the code, its dependencies and the standard library for known vulnerabilities
+	./ci/scan.sh
+
 cover: ## Run the tests and report total coverage
 	go test -coverprofile=coverage.out $(PKG)
 	go tool cover -func=coverage.out | tail -1
@@ -71,7 +76,7 @@ build: ## Build the binary
 run: ## Run the service. ADDR=:9090 to move it
 	ADDR=$(ADDR) go run ./cmd/api
 
-tidy: ## Tidy go.mod and fail if it drifted
+tidy: ## Tidy go.mod and go.sum in place
 	go mod tidy
 
 clean: ## Remove build artifacts
