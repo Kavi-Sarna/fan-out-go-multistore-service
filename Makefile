@@ -4,27 +4,62 @@ SHELL := /usr/bin/env bash
 BINARY := bin/api
 PKG    := ./...
 
-.PHONY: help fmt vet lint test race cover build run tidy clean
+# Tooling is pinned and installed into .tools rather than assumed to be on
+# PATH. `make lint` failing with "command not found" on a machine that has
+# Go is a bad first five minutes, and two people running different linter
+# versions is a worse afternoon.
+TOOLS  := $(CURDIR)/.tools
+MODULE := $(shell go list -m)
+
+# The versions live in one file that both make and ci/run.sh read, because a
+# pin declared twice is the drift this project exists to avoid.
+include ci/tools.env
+
+# Keyed by version, so bumping a pin installs the new one rather than finding
+# a file of the right name and running whatever version it happens to be.
+GOLANGCI  := $(TOOLS)/golangci-lint-$(GOLANGCI_VER)
+GOIMPORTS := $(TOOLS)/goimports-$(GOIMPORTS_VER)
+
+.PHONY: help fmt vet lint test race cover build run tidy tools ci clean clean-tools
 
 help: ## Show this help
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk -F':.*?## ' '{printf "  \033[36m%-8s\033[0m %s\n", $$1, $$2}'
 
-fmt: ## Format the code
-	go run golang.org/x/tools/cmd/goimports@v0.39.0 -w -local github.com/kavi-sarna/fan-out-go-multistore-service .
+# Installed via a scratch GOBIN then renamed, because `go install` names the
+# binary after the package and cannot be told to add a version suffix.
+$(GOLANGCI):
+	@echo "installing golangci-lint $(GOLANGCI_VER)"
+	@mkdir -p $(TOOLS) && tmp=$$(mktemp -d) && \
+	  GOBIN=$$tmp go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_VER) && \
+	  mv $$tmp/golangci-lint $@ && rm -rf $$tmp
+
+$(GOIMPORTS):
+	@echo "installing goimports $(GOIMPORTS_VER)"
+	@mkdir -p $(TOOLS) && tmp=$$(mktemp -d) && \
+	  GOBIN=$$tmp go install golang.org/x/tools/cmd/goimports@$(GOIMPORTS_VER) && \
+	  mv $$tmp/goimports $@ && rm -rf $$tmp
+
+tools: $(GOLANGCI) $(GOIMPORTS) ## Install the pinned tools into .tools
+
+fmt: $(GOIMPORTS) ## Format the code
+	$(GOIMPORTS) -w -local $(MODULE) .
 	gofmt -s -w .
 
 vet: ## Report suspicious constructs
 	go vet $(PKG)
 
-lint: ## Run the linters
-	golangci-lint run
+lint: $(GOLANGCI) ## Run the linters
+	$(GOLANGCI) run
 
 test: ## Run the tests
 	go test $(PKG)
 
 race: ## Run the tests under the race detector
 	go test -race $(PKG)
+
+ci: ## Run everything CI runs, in the same order, by the same script
+	./ci/run.sh
 
 cover: ## Run the tests and report total coverage
 	go test -coverprofile=coverage.out $(PKG)
@@ -38,11 +73,9 @@ run: ## Run the service. ADDR=:9090 to move it
 
 tidy: ## Tidy go.mod and fail if it drifted
 	go mod tidy
-	@if git rev-parse --git-dir >/dev/null 2>&1; then \
-	  git diff --exit-code -- go.mod $$(ls go.sum 2>/dev/null); \
-	else \
-	  echo "tidy: not a git repository, so there is nothing to compare against"; \
-	fi
 
 clean: ## Remove build artifacts
 	rm -rf bin coverage.out
+
+clean-tools: ## Remove the pinned tools, forcing a reinstall
+	rm -rf $(TOOLS)
