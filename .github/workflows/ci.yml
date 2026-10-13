@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to a branch makes the first run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # The whole pipeline is a couple of minutes. Without this a hung module
+    # download sits on a runner for GitHub's six-hour default before anyone
+    # finds out.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          # From go.mod, so the toolchain is pinned in one place rather than
+          # two that drift.
+          go-version-file: go.mod
+          cache: true
+
+      # golangci-lint is built from source on first use; this keeps it.
+      - uses: actions/cache@v6
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('ci/tools.env', 'go.mod') }}
+
+      # Everything the pipeline does lives in this script, so a failure here
+      # is reproducible with the same command on a laptop.
+      - run: ./ci/run.sh

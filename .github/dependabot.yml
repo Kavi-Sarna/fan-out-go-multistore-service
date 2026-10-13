@@ -1,0 +1,45 @@
+# Updates arrive as pull requests, and the pull requests run CI. That is the
+# alternative to a scheduled rebuild that hopes nothing moved: everything is
+# pinned, and moving a pin is a change somebody reviews.
+version: 2
+
+updates:
+  # The devcontainer's features. Dependabot keeps devcontainer.json on the
+  # major version and rewrites devcontainer-lock.json with the exact one.
+  #
+  # What this does not cover: the image digest in devcontainer.json, the
+  # Docker engine version in the feature's options, and the Compose version
+  # in on-create.sh. Those are bumped by hand, which is a reason to look at
+  # them when the vulnerability scan or a Dependabot PR is open anyway.
+  - package-ecosystem: devcontainers
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    # One pull request for a batch of action bumps, rather than one each.
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Go modules. The first one arrived with the YAML parser the container
+  # tests read compose.yaml with.
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # The Dockerfile's FROM lines, tag and digest together. The build image and
+  # the Go version in go.mod must move as a pair - a test fails if they
+  # differ - so a Dependabot bump to the image is also the prompt to bump
+  # go.mod.
+  #
+  # compose.yaml is not watched yet: it builds its one image rather than
+  # pulling one. The docker-compose ecosystem joins when the first store does.
+  - package-ecosystem: docker
+    directory: "/infra/docker"
+    schedule:
+      interval: weekly

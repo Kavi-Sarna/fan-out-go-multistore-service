@@ -1,0 +1,57 @@
+name: Vulnerability scan
+
+# The one job here that runs on a schedule, and the reason is specific: its
+# answer changes without anyone committing anything. The vulnerability
+# database is updated daily, so a build that was clean yesterday can have a
+# reachable vulnerability today. Nothing in the repository moved; the world
+# did. That is what a schedule is for.
+#
+# It is kept out of the main pipeline for the same reason. A CVE published
+# overnight would turn every open pull request red for a cause none of them
+# introduced and none of them can fix.
+on:
+  schedule:
+    - cron: "23 5 * * *"
+  # Changing dependencies or the image can introduce a vulnerability, and
+  # that pull request is the right place to be told. It is a change the
+  # author made.
+  pull_request:
+    paths:
+      - "go.mod"
+      - "go.sum"
+      - "infra/docker/**"
+      - "ci/scan.sh"
+      - "ci/tools.env"
+  workflow_dispatch:
+
+concurrency:
+  group: scan-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    # Trivy is built from source the first time, which is the slow part. The
+    # cache below makes every later run reuse the binary.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          # The standard library is scanned too, so the toolchain has to be
+          # exactly the one go.mod names - not whatever the runner has.
+          go-version-file: go.mod
+          cache: true
+
+      # The pinned tools, built once. Keyed on the pins and on go.mod, since a
+      # binary is built by a particular Go; a change to either rebuilds.
+      - uses: actions/cache@v6
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('ci/tools.env', 'go.mod') }}
+
+      - run: ./ci/scan.sh

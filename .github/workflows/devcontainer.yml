@@ -1,0 +1,50 @@
+name: Devcontainer
+
+# Builds the devcontainer and runs the whole pipeline inside it.
+#
+# The unit tests prove devcontainer.json says the right things. This proves
+# the container it describes actually starts, runs its hooks, and can build
+# and test the project - which is the difference between a devcontainer that
+# is correct and one that merely parses.
+on:
+  pull_request:
+    paths:
+      - ".devcontainer/**"
+      - ".github/workflows/devcontainer.yml"
+      - "ci/**"
+      - "Makefile"
+      - "go.mod"
+      - "go.sum"
+      # make ci builds and runs the image, inside docker-in-docker, so the
+      # image's inputs are the container's inputs too.
+      - "infra/docker/**"
+  # No schedule. Everything the container is built from is pinned - the image
+  # by digest, the feature by lockfile, Docker and Compose by version - so a
+  # scheduled rebuild would build the same thing every week. Updates arrive as
+  # Dependabot pull requests instead, which this workflow then tests. Drift
+  # becomes something reviewed rather than something discovered.
+  workflow_dispatch:
+
+concurrency:
+  group: devcontainer-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Slower than the main pipeline: it pulls an image and runs the create
+    # hooks before it gets to the build.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: devcontainers/ci@v0.3
+        with:
+          # The same command a person runs. Building inside the container is
+          # the claim being tested.
+          runCmd: make ci
+          # Built to be thrown away; nothing here publishes an image.
+          push: never
