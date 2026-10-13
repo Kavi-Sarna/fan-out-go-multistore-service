@@ -1,0 +1,96 @@
+{
+  // Comments in this file are full-line only and there are no trailing
+  // commas. Both are legal JSONC, and both would stop cmd/api's test from
+  // parsing it with the standard library - which is the test that keeps the
+  // forwarded ports honest.
+  "name": "fan-out-go-multistore-service",
+
+  // The Go image rather than a base image plus a Go feature: the toolchain,
+  // gopls and the debugger arrive together and agree on versions. Pinned by
+  // digest, because a tag is a promise and a digest is a fact.
+  "image": "mcr.microsoft.com/devcontainers/go:1.26-trixie@sha256:8b574a68147f10c022721891b5df98ea3adc7abb251806959f5cfc40e20e279b",
+
+  // Docker-in-docker for Compose, which arrives with the Dockerfile and then
+  // grows a store at a time. Present now so that adding a service never
+  // means rebuilding the container to get a Docker daemon.
+  //
+  // The feature is referenced by major version here and pinned exactly in
+  // devcontainer-lock.json, the way go.mod and go.sum divide the work. That
+  // split is what Dependabot expects: it keeps this line on the major and
+  // updates the lockfile.
+  //
+  // moby is false because Microsoft publishes no moby packages for Debian
+  // trixie; the feature refuses to install it there and creation fails. With
+  // it off, Docker CE comes from Docker's own repository, which does.
+  //
+  // version is the Docker engine, which otherwise defaults to whatever is
+  // newest on the day the container is built. Compose cannot be pinned
+  // through this feature at all - it installs the newest plugin regardless -
+  // so on-create.sh pins it.
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4": {
+      "moby": false,
+      "version": "29.9",
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+
+  // Sized for what the stack needs now, and raised when it needs more.
+  //
+  // hostRequirements is a floor on the machine picker, not a fixed size: a
+  // codespace's machine type can be changed at any time from the codespaces
+  // list or the command palette. So there is no reason to pay for the
+  // finished stack while it is one Go binary. GitHub Free includes 120
+  // core-hours a month, which is 60 hours on two cores against 30 on four.
+  //
+  // The PR that adds a service heavy enough to need more raises this floor
+  // in the same change, and the codespace is then moved to a larger machine
+  // type rather than recreated.
+  "hostRequirements": {
+    "cpus": 2,
+    "memory": "8gb",
+    "storage": "32gb"
+  },
+
+  // Every port a service listens on, forwarded and labelled. Each later PR
+  // that adds a service adds its port here, and a test fails if one is
+  // missing or unlabelled.
+  "forwardPorts": [8080],
+
+  "portsAttributes": {
+    "8080": {
+      "label": "API",
+      "onAutoForward": "notify"
+    }
+  },
+
+  // Split by how often they need to run. onCreate is the slow one-off;
+  // postStart runs on every resume. A codespace stops after 30 idle minutes,
+  // so a service started only on create would be gone the second time you
+  // opened it.
+  "onCreateCommand": ".devcontainer/on-create.sh",
+  "postStartCommand": ".devcontainer/post-start.sh",
+  "waitFor": "onCreateCommand",
+
+  // .tools on PATH, so the editor and the terminal both find golangci-lint
+  // by name. That name is a symlink `make tools` re-points at whatever
+  // ci/tools.env pins, so nothing here repeats a version.
+  "remoteEnv": {
+    "PATH": "${containerWorkspaceFolder}/.tools:${containerEnv:PATH}"
+  },
+
+  // golangci-lint-v2 rather than golangci-lint: v2 removed flags the v1
+  // integration passes, --fast among them. No lintFlags either, so the editor
+  // lints with .golangci.yml exactly as CI does; a faster subset in the
+  // editor is a different set of rules, and a file that is clean locally and
+  // red in CI.
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.go"],
+      "settings": {
+        "go.lintTool": "golangci-lint-v2",
+        "go.lintOnSave": "package"
+      }
+    }
+  }
+}

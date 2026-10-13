@@ -1,11 +1,14 @@
 # fan-out-go-multistore-service
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/kavi-sarna/fan-out-go-multistore-service)
+
 One write, three stores, all or none: distributed-transaction semantics in Go over Postgres, Cassandra and Kafka.
 
 That requirement is the whole point. No transaction primitive spans those three — Postgres is ACID on its own, Cassandra offers Paxos per partition and no more, and Kafka's transactions stop at Kafka's own edge. There is no coordinator to enlist all three, so all-or-nothing is not something you configure. It is something you build.
 
 The worked example is device sessions. A session carries an IP and a user agent: fields that are useful, identifying, and one careless line away from a log nobody can un-write.
 
-> **Status: PR 2 — one script is the build.** `GET /healthz`, a shutdown that lets in-flight requests finish, and a pipeline that CI and a laptop run by invoking the same file. No database yet; that is PR 7.
+> **Status: PR 3 — opens anywhere.** `GET /healthz`, a graceful shutdown, one script as the build, and a devcontainer that leaves the service running the moment a codespace opens. No database yet; that is PR 7.
 
 
 ## Quick start
@@ -17,6 +20,7 @@ curl localhost:8080/healthz
 
 ```bash
 make ci         # everything the pipeline does, in the same order
+make scan       # known vulnerabilities in the code, its deps and the stdlib
 make test       # just the tests
 make race       # the same, under the race detector
 make lint       # golangci-lint
@@ -25,6 +29,21 @@ make help       # everything else
 ```
 
 Needs Go 1.26 and nothing else. `golangci-lint` and `goimports` are pinned in `ci/tools.env` and installed into `.tools` on first use.
+
+
+## Running it in a browser
+
+Click the badge. GitHub builds a container with Go 1.26, Docker and the pinned linters, compiles the service, and starts it. When the terminal says the service is running, port 8080 is already forwarded:
+
+```bash
+curl localhost:8080/healthz
+```
+
+The first create takes a few minutes; a resume takes seconds and restarts the service on its own, so the forwarded port answers whenever the codespace is open. A codespace stops after 30 idle minutes and costs nothing while stopped.
+
+To show someone, set port 8080 to **Public** in the Ports panel. Nothing in this service has authentication, so that URL is open to anyone who has it — make it public only for the length of the demo.
+
+**Two cores is enough for now.** The devcontainer asks for what the stack needs today, and the PR that adds something heavier raises the floor in the same change. A codespace's machine type can be changed at any time — from the codespaces list, or *Codespaces: Change Machine Type* in the command palette — so it grows with the stack rather than being recreated. On GitHub Free two cores is 60 hours a month, against 30 on four.
 
 
 ## The build is one script
@@ -37,6 +56,17 @@ Needs Go 1.26 and nothing else. `golangci-lint` and `goimports` are pinned in `c
 ```
 
 Tests run with `-race` and `-shuffle=on` on every invocation rather than in a nightly job. A data race found a week later is a race nobody can attribute to a change, and shuffling makes an order dependency between tests fail here rather than intermittently for whoever runs them next.
+
+
+## Vulnerabilities, on a schedule
+
+`make scan` runs `govulncheck` against the code, its dependencies, and the Go standard library. It reports only vulnerabilities in functions this code actually calls, so a finding is a path to vulnerable code rather than a version number to argue about.
+
+It runs nightly, and it is the only job here that does. Its answer changes without anyone committing anything: the vulnerability database is updated every day, so a build that was clean yesterday can have a reachable vulnerability today. That is also why it is not part of `make ci` — a CVE published overnight would turn every open pull request red for a cause none of them introduced. It runs on pull requests that change `go.mod`, because adding a dependency is a change somebody made and should hear about.
+
+Its first run found fourteen reachable vulnerabilities in the standard library of go1.26.2. The fix was moving to go1.26.9; `go.mod` names the version, so CI and the devcontainer follow it.
+
+Everything else is pinned — the devcontainer image by digest, its feature by lockfile, Docker and Compose by version — and Dependabot proposes updates as pull requests. A scheduled rebuild of pinned inputs would build the same thing every week.
 
 
 ## The layering rules are tests
@@ -71,12 +101,15 @@ This is tested rather than asserted: replace `Shutdown` with `Close` and `TestSe
 ## Layout
 
 ```
-cmd/api/main.go       wiring: configuration, listener, server, shutdown
-cmd/api/layout_test.go the layering rules, beside the root they protect
-internal/httpapi/     routes and handlers, no knowledge of how it is started
-ci/run.sh             the build. CI calls this and so do you
-ci/tools.env          tool versions, read by both make and the script
-docs/roadmap.md       the twenty-two PRs, and why each is in that order
+cmd/api/main.go             wiring: configuration, listener, server, shutdown
+cmd/api/layout_test.go      the layering rules, beside the root they protect
+internal/httpapi/           routes and handlers, no knowledge of how it is started
+ci/run.sh                   the build. CI calls this and so do you
+.devcontainer/              the container a codespace runs, and its start hooks
+ci/tools.env                tool versions, read by both make and the script
+ci/scan.sh                  govulncheck, nightly and on dependency changes
+.github/dependabot.yml      pinned versions move by pull request, not by surprise
+docs/roadmap.md             the twenty-two PRs, and why each is in that order
 ```
 
 Everything the service will eventually talk to arrives behind an interface, so the domain never imports a driver. Today that is one route and no stores; the shape is there to hold.
@@ -92,3 +125,4 @@ A liveness endpoint that checks a database turns a slow dependency into an outag
 - [`docs/roadmap.md`](https://gist.github.com/Kavi-Sarna/e924cf2b8e8d32f45c8456622d4ec848) — the full plan
 - [`docs/pr-01-walkthrough.md`](docs/pr-01-walkthrough.md) — this PR, in detail
 - [`docs/pr-02-walkthrough.md`](docs/pr-02-walkthrough.md) — one script as the build, and rules that are tests
+- [`docs/pr-03-walkthrough.md`](docs/pr-03-walkthrough.md) — the devcontainer, early, and kept honest by tests
