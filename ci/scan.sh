@@ -48,8 +48,27 @@ echo "==> govulncheck: the code, its dependencies, the standard library"
 TRIVY="${TOOLS}/trivy-${TRIVY_VER}"
 if [[ ! -x "${TRIVY}" ]]; then
   echo "installing trivy ${TRIVY_VER}"
+  mkdir -p "${TOOLS}"
   temp="$(mktemp -d)"
-  GOBIN="${temp}" go install "github.com/aquasecurity/trivy/cmd/trivy@${TRIVY_VER}"
+
+  kernel="$(uname -s)"
+  case "${kernel}" in
+    Darwin) os="macOS" ;;
+    Linux)  os="Linux" ;;
+    *) echo "unsupported OS: ${kernel}" >&2; exit 1 ;;
+  esac
+
+  machine="$(uname -m)"
+  case "${machine}" in
+    x86_64)        arch="64bit" ;;
+    arm64|aarch64) arch="ARM64" ;;
+    *) echo "unsupported architecture: ${machine}" >&2; exit 1 ;;
+  esac
+
+  version_num="${TRIVY_VER#v}"
+  archive_url="https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VER}/trivy_${version_num}_${os}-${arch}.tar.gz"
+
+  curl -fsSL "${archive_url}" | tar -xz -C "${temp}" trivy
   mv "${temp}/trivy" "${TRIVY}"
   rm -rf "${temp}"
 fi
