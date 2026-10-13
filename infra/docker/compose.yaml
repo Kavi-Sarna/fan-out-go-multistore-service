@@ -1,0 +1,40 @@
+# The service, run the way it ships. Postgres, Kafka and the rest join this
+# file a store at a time.
+#
+# Run with --file from the repository root, so this directory is the project
+# directory: relative paths here, and a .env file, resolve against
+# infra/docker, beside the store configuration that will live here too.
+name: fan-out
+
+services:
+  api:
+    # The context is the repository root, two levels up; the Dockerfile path
+    # is relative to it.
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile
+    image: fan-out-api:local
+
+    # 8081 on the host, 8080 in the container. The devcontainer already runs
+    # the service natively on 8080, and two processes cannot hold one port;
+    # this way `make run` and `make up` work side by side, which is also a
+    # quick way to compare the binary with the image.
+    ports:
+      - "8081:8080"
+
+    # Longer than the service's own drain. Compose sends SIGTERM, waits this
+    # long, then SIGKILL; its default of ten seconds would kill the process
+    # five seconds into a fifteen-second drain, which is exactly the dropped
+    # request graceful shutdown exists to prevent. A test compares the two.
+    stop_grace_period: 20s
+
+    # The same posture Kubernetes will enforce, applied here first so a
+    # dependency on any of it shows up on a laptop rather than in a cluster.
+    # The binary writes nothing to disk and binds above 1024, so it needs no
+    # writable filesystem and no capabilities.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+
+    restart: unless-stopped

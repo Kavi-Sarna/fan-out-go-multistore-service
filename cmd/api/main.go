@@ -1,5 +1,5 @@
 // Command api is the service entry point: read configuration, build the
-// server, run it until signalled, and drain.
+// server, run it until signaled, and drain.
 package main
 
 import (
@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -33,9 +34,28 @@ const (
 	// Their right values depend on what the handlers do, and the handlers do
 	// nothing. They are due with the stores, in PR 7.
 	readHeaderTimeout = 5 * time.Second
+
+	// Shorter than any orchestrator's probe interval, so a hung service fails
+	// its check rather than wedging the thing that is checking it.
+	healthcheckTimeout = 2 * time.Second
+
+	// The subcommand the Dockerfile's HEALTHCHECK runs. Named once so a test
+	// can hold the two together.
+	healthcheckCommand = "healthcheck"
 )
 
 func main() {
+	// The runtime image is distroless: no shell, no curl, no wget. A
+	// container healthcheck can only run a binary that is already there, so
+	// the service checks itself.
+	if len(os.Args) > 1 && os.Args[1] == healthcheckCommand {
+		if err := healthcheck(context.Background(), os.Getenv("ADDR")); err != nil {
+			fmt.Fprintln(os.Stderr, "unhealthy:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	// JSON from the first line. Converting a codebase's log calls in bulk
 	// later is a PR nobody wants to review, and there are three of them now.
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -140,6 +160,64 @@ func serve(
 	}
 	if shutdownErr != nil {
 		return fmt.Errorf("draining: %w", shutdownErr)
+	}
+	return nil
+}
+
+// healthcheck asks a running copy of the service whether it is up, and
+// reports through the error.
+//
+// It only ever dials loopback. The host in ADDR says which interface the
+// service binds to; it is not somewhere to send a request. Taking it at face
+// value would make the healthcheck a client of whatever the environment
+// named, which is a request forgery waiting for someone to set ADDR. So a
+// loopback or unspecified host - ":8080" is what a container is given, so its
+// port mapping can reach it - is probed on loopback, and anything else is
+// refused rather than dialed.
+func healthcheck(ctx context.Context, addr string) error {
+	if addr == "" {
+		addr = defaultAddr
+	}
+	host, portText, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("parsing %q: %w", addr, err)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("%q is not a port", portText)
+	}
+
+	loopback := "127.0.0.1"
+	switch ip := net.ParseIP(host); {
+	case host == "" || host == "localhost" || (ip != nil && ip.IsUnspecified()):
+	case ip != nil && ip.IsLoopback():
+		if ip.To4() == nil {
+			loopback = "::1" // bound to IPv6 loopback only, so probe that
+		}
+	default:
+		return fmt.Errorf("ADDR host %q is not loopback or unspecified; "+
+			"the healthcheck only probes this process", host)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, healthcheckTimeout)
+	defer cancel()
+
+	// gosec's taint analysis follows port from the environment into the URL
+	// and cannot see that it was validated as an integer, or that the host is
+	// a constant. Both suppressions below are for that and nothing wider.
+	url := "http://" + net.JoinHostPort(loopback, strconv.Itoa(port)) + "/healthz"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil) //nolint:gosec // G704: loopback host, validated port
+	if err != nil {
+		return fmt.Errorf("building request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req) //nolint:gosec // G704: loopback host, validated port
+	if err != nil {
+		return fmt.Errorf("probing %s: %w", url, err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s answered %s", url, resp.Status)
 	}
 	return nil
 }

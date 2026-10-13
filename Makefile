@@ -1,8 +1,9 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-BINARY := bin/api
-PKG    := ./...
+BINARY  := bin/api
+PKG     := ./...
+COMPOSE := docker compose --file infra/docker/compose.yaml
 
 # Tooling is pinned and installed into .tools rather than assumed to be on
 # PATH. `make lint` failing with "command not found" on a machine that has
@@ -20,7 +21,7 @@ include ci/tools.env
 GOLANGCI  := $(TOOLS)/golangci-lint-$(GOLANGCI_VER)
 GOIMPORTS := $(TOOLS)/goimports-$(GOIMPORTS_VER)
 
-.PHONY: help fmt vet lint test race cover build run tidy tools ci scan clean clean-tools
+.PHONY: help fmt vet lint test race cover build run tidy tools ci scan image up down logs clean clean-tools
 
 help: ## Show this help
 	@grep -hE '^[a-z0-9-]+:.*?## ' $(MAKEFILE_LIST) \
@@ -63,8 +64,21 @@ race: ## Run the tests under the race detector
 ci: ## Run everything CI runs, in the same order, by the same script
 	./ci/run.sh
 
-scan: ## Check the code, its dependencies and the standard library for known vulnerabilities
+scan: ## Known vulnerabilities in the code, its dependencies, the stdlib and the image
 	./ci/scan.sh
+
+image: ## Build the container image
+	$(COMPOSE) build
+
+up: ## Run the service in a container on :8081, and wait until it is healthy
+	$(COMPOSE) up --build --detach --wait
+	@echo "the service is on http://localhost:8081/healthz"
+
+down: ## Stop the containers
+	$(COMPOSE) down --remove-orphans
+
+logs: ## Follow the container logs
+	$(COMPOSE) logs --follow
 
 cover: ## Run the tests and report total coverage
 	go test -coverprofile=coverage.out $(PKG)
