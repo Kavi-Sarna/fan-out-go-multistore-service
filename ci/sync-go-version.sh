@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Keep the Dockerfile's golang image and go.mod on the same Go version, and
-# on the latest patch of that minor.
+# Keep every Go pin on the same minor, and on the latest patch of that minor.
 #
 # Dependabot updates one ecosystem at a time. A docker bump to golang:1.27.1
 # leaves go.mod on 1.26.9, and CI fails the pair check. The same bump can land
 # on an intermediate patch while 1.27.2 already exists — and the vulnerability
-# scan then fails for CVEs the newer patch fixed. This script is what turns
-# those pull requests green: take the newer of the two pins, advance to the
-# latest patch of that minor, write both files, and stop.
+# scan then fails for CVEs the newer patch fixed. A Go minor bump also breaks
+# the pinned golangci-lint (export-data mismatch) and the devcontainer image
+# (GOTOOLCHAIN=local against an older toolchain). This script rewrites all of
+# those together so a Dependabot pull request can go green.
 #
 # Safe to run locally. Prints what it did; exits 0 when the tree is already
 # aligned or after rewriting it.
@@ -17,6 +17,8 @@ cd "$(dirname "$0")/.."
 
 DOCKERFILE="infra/docker/Dockerfile"
 GOMOD="go.mod"
+DEVCONTAINER=".devcontainer/devcontainer.json"
+TOOLS_ENV="ci/tools.env"
 
 dockerfile_line="$(grep -E '^FROM golang:[0-9]+\.[0-9]+\.[0-9]+-' "${DOCKERFILE}" | head -1 || true)"
 if [[ -z "${dockerfile_line}" ]]; then
@@ -102,6 +104,30 @@ registry_digest="$(
   printf '%s\n' "${digest#sha256:}"
 )"
 
+devcontainer_digest="$(
+  digest="$(
+    curl -fsSI \
+      -H "Accept: application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+      "https://mcr.microsoft.com/v2/devcontainers/go/manifests/${major_minor}-${variant}" \
+      | tr -d '\r' \
+      | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2; exit}'
+  )"
+  if [[ -z "${digest}" ]]; then
+    echo "failed to resolve digest for mcr.microsoft.com/devcontainers/go:${major_minor}-${variant}" >&2
+    exit 1
+  fi
+  printf '%s\n' "${digest#sha256:}"
+)"
+
+latest_golangci="$(
+  curl -fsSL https://api.github.com/repos/golangci/golangci-lint/releases/latest \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])'
+)"
+if [[ -z "${latest_golangci}" ]]; then
+  echo "failed to resolve latest golangci-lint release" >&2
+  exit 1
+fi
+
 changed=0
 
 desired_from="FROM golang:${latest_patch}-${variant}@sha256:${registry_digest} AS build"
@@ -142,10 +168,60 @@ PY
   changed=1
 fi
 
+desired_devimage="mcr.microsoft.com/devcontainers/go:${major_minor}-${variant}@sha256:${devcontainer_digest}"
+current_devimage="$(
+  python3 - "${DEVCONTAINER}" <<'PY'
+import pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+m = re.search(
+    r'"image"\s*:\s*"(mcr\.microsoft\.com/devcontainers/go:[^"]+)"',
+    text,
+)
+if not m:
+    sys.exit("devcontainer.json has no mcr.microsoft.com/devcontainers/go image")
+print(m.group(1))
+PY
+)"
+if [[ "${current_devimage}" != "${desired_devimage}" ]]; then
+  python3 - "${DEVCONTAINER}" "${desired_devimage}" <<'PY'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+desired = sys.argv[2]
+text = path.read_text()
+new, n = re.subn(
+    r'("image"\s*:\s*")mcr\.microsoft\.com/devcontainers/go:[^"]+(")',
+    rf'\1{desired}\2',
+    text,
+    count=1,
+)
+if n != 1:
+    sys.exit(f"expected one devcontainers/go image line in {path}")
+path.write_text(new)
+PY
+  echo "devcontainer: ${current_devimage} → ${desired_devimage}"
+  changed=1
+fi
+
+current_golangci="$(grep -E '^GOLANGCI_VER=' "${TOOLS_ENV}" | cut -d= -f2-)"
+if [[ "${current_golangci}" != "${latest_golangci}" ]]; then
+  python3 - "${TOOLS_ENV}" "${latest_golangci}" <<'PY'
+import pathlib, re, sys
+path = pathlib.Path(sys.argv[1])
+ver = sys.argv[2]
+text = path.read_text()
+new, n = re.subn(r'(?m)^GOLANGCI_VER=.*$', f'GOLANGCI_VER={ver}', text, count=1)
+if n != 1:
+    sys.exit(f"expected one GOLANGCI_VER line in {path}")
+path.write_text(new)
+PY
+  echo "golangci-lint: ${current_golangci} → ${latest_golangci}"
+  changed=1
+fi
+
 if [[ "${changed}" -eq 0 ]]; then
-  echo "already aligned on Go ${latest_patch} (${image_ref})"
+  echo "already aligned on Go ${latest_patch} (${image_ref}), golangci-lint ${latest_golangci}"
 else
-  echo "synced to Go ${latest_patch}"
+  echo "synced to Go ${latest_patch}, golangci-lint ${latest_golangci}"
 fi
 
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then

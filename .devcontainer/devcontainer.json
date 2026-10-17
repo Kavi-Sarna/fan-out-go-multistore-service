@@ -8,7 +8,7 @@
   // The Go image rather than a base image plus a Go feature: the toolchain,
   // gopls and the debugger arrive together and agree on versions. Pinned by
   // digest, because a tag is a promise and a digest is a fact.
-  "image": "mcr.microsoft.com/devcontainers/go:1.26-trixie@sha256:8b574a68147f10c022721891b5df98ea3adc7abb251806959f5cfc40e20e279b",
+  "image": "mcr.microsoft.com/devcontainers/go:1.27-trixie@sha256:8f1c83128e4bce9d745b1dc0f28f8c027e303d3886e2434966ff135296c41770",
 
   // Docker-in-docker for Compose, which arrives with the Dockerfile and then
   // grows a store at a time. Present now so that adding a service never

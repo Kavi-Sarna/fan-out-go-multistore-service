@@ -43,11 +43,15 @@ jobs:
         id: sync
         run: ./ci/sync-go-version.sh
 
-      - name: Commit and push when the pair moved
+      - name: Commit and push when pins moved
         if: steps.sync.outputs.changed == '1'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add infra/docker/Dockerfile go.mod
-          git commit -m "chore: sync Go ${{ steps.sync.outputs.version }} across Dockerfile and go.mod"
+          git add \
+            infra/docker/Dockerfile \
+            go.mod \
+            .devcontainer/devcontainer.json \
+            ci/tools.env
+          git commit -m "chore: sync Go ${{ steps.sync.outputs.version }} across Dockerfile, go.mod, and tooling"
           git push
