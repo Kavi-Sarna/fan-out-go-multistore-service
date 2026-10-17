@@ -14,7 +14,7 @@
 # mismatch fail the build instead of quietly downloading a different
 # toolchain, and cmd/api/container_test.go fails before the build gets that
 # far.
-FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS build
+FROM golang:1.27.1-trixie@sha256:8f58fd67ea075142d947a60e0caa4317746a55118d312f027793d382c7741734 AS build
 
 WORKDIR /src
 

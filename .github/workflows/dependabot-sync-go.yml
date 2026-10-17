@@ -4,6 +4,9 @@ name: Dependabot sync Go
 # match, and the vulnerability scan wants the latest patch of that minor.
 # This job rewrites the pair on Dependabot pull requests, then pushes so the
 # ordinary CI / scan / devcontainer workflows see an aligned tree.
+#
+# workflow_dispatch exists so the same job can be proven on an open branch
+# without waiting for Dependabot to open the next pull request.
 on:
   pull_request:
     paths:
@@ -11,9 +14,10 @@ on:
       - "go.mod"
       - "ci/sync-go-version.sh"
       - ".github/workflows/dependabot-sync-go.yml"
+  workflow_dispatch:
 
 concurrency:
-  group: dependabot-sync-go-${{ github.head_ref }}
+  group: dependabot-sync-go-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 permissions:
@@ -21,13 +25,13 @@ permissions:
 
 jobs:
   sync:
-    if: github.actor == 'dependabot[bot]'
+    if: github.actor == 'dependabot[bot]' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ github.head_ref || github.ref_name }}
           # A PAT (repo + workflow) stored as DEPENDABOT_SYNC_TOKEN makes the
           # push re-trigger CI. github.token can push to the Dependabot
           # branch, but GitHub does not start new workflow runs from that
