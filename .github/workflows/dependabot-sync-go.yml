@@ -1,0 +1,57 @@
+name: Dependabot sync Go
+
+# Dependabot moves the Dockerfile or go.mod, never both. CI requires them to
+# match, and the vulnerability scan wants the latest patch of that minor.
+# This job rewrites the pair on Dependabot pull requests, then pushes so the
+# ordinary CI / scan / devcontainer workflows see an aligned tree.
+#
+# workflow_dispatch exists so the same job can be proven on an open branch
+# without waiting for Dependabot to open the next pull request.
+on:
+  pull_request:
+    paths:
+      - "infra/docker/Dockerfile"
+      - "go.mod"
+      - "ci/sync-go-version.sh"
+      - ".github/workflows/dependabot-sync-go.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: dependabot-sync-go-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.actor == 'dependabot[bot]' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          # A PAT (repo + workflow) stored as DEPENDABOT_SYNC_TOKEN makes the
+          # push re-trigger CI. github.token can push to the Dependabot
+          # branch, but GitHub does not start new workflow runs from that
+          # token's commits — so without the secret you still need to close
+          # and reopen the PR, or push once yourself, after the sync lands.
+          token: ${{ secrets.DEPENDABOT_SYNC_TOKEN || github.token }}
+
+      - name: Align Dockerfile and go.mod on the latest patch
+        id: sync
+        run: ./ci/sync-go-version.sh
+
+      - name: Commit and push when pins moved
+        if: steps.sync.outputs.changed == '1'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            infra/docker/Dockerfile \
+            go.mod \
+            .devcontainer/devcontainer.json \
+            ci/tools.env
+          git commit -m "chore: sync Go ${{ steps.sync.outputs.version }} across Dockerfile, go.mod, and tooling"
+          git push

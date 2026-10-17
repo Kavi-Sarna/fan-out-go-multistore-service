@@ -32,10 +32,14 @@ updates:
     schedule:
       interval: weekly
 
-  # The Dockerfile's FROM lines, tag and digest together. The build image and
-  # the Go version in go.mod must move as a pair - a test fails if they
-  # differ - so a Dependabot bump to the image is also the prompt to bump
-  # go.mod.
+  # The Dockerfile's FROM lines, tag and digest together. The build image,
+  # go.mod, the Go devcontainer image, and golangci-lint must move together -
+  # a test fails if the image and go.mod differ, and a Go minor bump breaks an
+  # older linter and an older devcontainer toolchain. Dependabot still updates
+  # one ecosystem at a time; the dependabot-sync-go workflow runs
+  # ci/sync-go-version.sh on its pull requests, which rewrites those pins and
+  # advances them to the latest patch of that minor (so a bump to 1.27.1
+  # becomes 1.27.2 when 1.27.2 already exists).
   #
   # compose.yaml is not watched yet: it builds its one image rather than
   # pulling one. The docker-compose ecosystem joins when the first store does.
