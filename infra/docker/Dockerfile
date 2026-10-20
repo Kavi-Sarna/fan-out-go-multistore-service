@@ -14,7 +14,7 @@
 # mismatch fail the build instead of quietly downloading a different
 # toolchain, and cmd/api/container_test.go fails before the build gets that
 # far.
-FROM golang:1.27.2-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS build
+FROM golang:1.27.3-trixie@sha256:1896654cfc5c2b5ad74c07f29cb36f5d2d1cbed42e3054070fbfe444e521e83c AS build
 
 WORKDIR /src
 
@@ -45,7 +45,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # distroless/static: certificates, a passwd entry for an unprivileged user,
 # timezone data, and nothing else - no shell, no package manager. Debian 13,
 # the same release the devcontainer runs.
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:e2e927ec666bae08560abb3c55d0659eceabb657f56b6782ab500a9fc7f555e3
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:516757106de35205efb70b91ba03f6f1298424a0678c603255cf2852a7000087
 
 COPY --from=build /out/api /api
 
